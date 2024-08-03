@@ -1,0 +1,47 @@
+# This workflow will build a golang project
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
+
+name: Go
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.20'
+
+    - name: Checkout SEI Chain
+      uses: actions/checkout@v4.1.7
+      with:
+        repository: 'sei-protocol/sei-chain'
+
+    - name: Checkout SEI Cosmos
+      uses: actions/checkout@v4.1.7
+      with:
+        repository: 'sei-protocol/sei-cosmos'
+
+    - name: Checkout SEI Tendermint
+      uses: actions/checkout@v4.1.7
+      with:
+        repository: 'sei-protocol/sei-tendermint'
+
+
+    #- name: Build
+    #  run: go build -v ./...
+
+    #- name: Test
+    #  run: go test -v ./...
+
+    - name: List files in workspace
+      run: ls -R
