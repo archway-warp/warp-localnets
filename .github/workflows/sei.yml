@@ -24,16 +24,6 @@ jobs:
     - name: Checkout SEI Chain
       run: git clone https://github.com/sei-protocol/sei-chain
 
-    - name: Checkout SEI Cosmos
-      run: git clone https://github.com/sei-protocol/sei-cosmos
-
-    - name: Checkout SEI Tendermint
-      run: git clone https://github.com/sei-protocol/sei-tendermint
-
-    - name: Set up go mod
-      run: cd sei-chain && go mod edit -replace github.com/cosmos/cosmos-sdk=../sei-cosmos && go mod edit -replace github.com/tendermint/tendermint=../sei-tendermint
-    - name: Install SEI Chain binary
-      run: cd sei-chain && make install && cd build/generated
     
     #- name: Build
     #  run: go build -v ./...

@@ -1,0 +1,114 @@
+# This workflow will build a golang project
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
+
+name: Injective Localnet Setup
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      tag-correct: ${{ steps.check-tag.outputs.TAG_CORRECT }}
+      latest-tag: ${{ steps.check-tag.outputs.LATEST_TAG }}
+    permissions:
+      packages: write
+      contents: read
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Clone the Injective Chain Repo
+      run: git clone https://github.com/InjectiveLabs/injective-chain-releases.git injective-releases
+   
+    - name: Get cached last tag
+      id: cache-tag
+      uses: actions/cache@v4.0.2
+      with:
+       path: latest.txt 
+       key: ${{ runner.os }}-build-latest-tag
+       
+    - name: Check if tag has changed
+      id: check-tag
+      run: |
+         if [ "${{ steps.cache-tag.outputs.cache-hit }}" != "true" ]; then
+           echo "Cache not found. Creating latest.txt."
+           cd injective-releases && git describe --tags `git rev-list --tags --max-count=1` > ../latest.txt
+           echo "TAG_CORRECT=1" >> $GITHUB_OUTPUT
+         else
+           echo "Cache found. Comparing tags."
+           cached_tag=$(cat latest.txt)
+           local_tag=$(cd injective-releases && git describe --tags `git rev-list --tags --max-count=1`)
+           if [ "$cached_tag" == "$local_tag" ]; then
+             echo "Tags match. No action needed."
+             echo "TAG_CORRECT=0" >> $GITHUB_OUTPUT
+
+           else
+             echo "Tag mismatch. Node most likely updated."
+             echo $local_tag > latest.txt
+             echo "TAG_CORRECT=1" >> $GITHUB_OUTPUT
+           fi
+         fi
+         echo "LATEST_TAG=$(cat latest.txt)" >> $GITHUB_OUTPUT
+         echo "TAG_CORRECT=1" >> $GITHUB_OUTPUT # Debug only
+
+    - name: Set Up Injectived Binary
+      if: steps.check-tag.outputs.TAG_CORRECT == '1'
+      continue-on-error: false
+      run: |
+        echo "Downloading latest Injectived binary."
+        INJ_URL=https://github.com/InjectiveLabs/injective-chain-releases/releases/download/$(cat latest.txt)/linux-amd64.zip
+        wget $INJ_URL
+        unzip linux-amd64.zip
+        chmod +x injectived
+        
+        cp injectived  /usr/local/bin/injectived
+        cp peggo /usr/local/bin/peggo
+        sudo cp libwasmvm.x86_64.so /usr/lib
+
+        echo "Injectived binary updated to latest version."
+    - name: Run Local Node Setup Script
+      if: steps.check-tag.outputs.TAG_CORRECT == '1'
+      run: |
+        wget https://raw.githubusercontent.com/InjectiveLabs/injective-chain-releases/master/scripts/setup.sh
+        chmod +x setup.sh
+        
+        # edit the mistakes out
+        sed -i 's/injectived add-genesis-account/injectived genesis add-genesis-account/' setup.sh
+        sed -i 's/injectived gentx genesis/injectived genesis gentx genesis/' setup.sh
+        sed -i 's/injectived collect-gentxs/injectived genesis collect-gentxs/' setup.sh
+        sed -i 's/injectived validate-genesis/injectived genesis validate/' setup.sh
+
+        ./setup.sh
+
+    - name: Prepare Env for Docker Build
+      if: steps.check-tag.outputs.TAG_CORRECT == '1'
+      run: |
+        sudo cp -r /home/runner/.injectived .injectived
+        sudo chown -R runner:runner .injectived
+        sudo chmod -R 777 .injectived
+        mv injective/Dockerfile Dockerfile
+        echo "Ready to build docker image."
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+
+
+    - name: Build and push Docker Image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: ghcr.io/archway-warp/injective-local:${{ steps.check-tag.outputs.LATEST_TAG }}
